@@ -1,0 +1,34 @@
+# credentials & secrets — never commit these
+.env
+*.conf
+rclone.conf
+credentials.json
+token.json
+*.key
+
+# manifest / runtime state
+*.db
+*.db-journal
+logs/
+.cloud-sync/
+# exception: the dashboard_data snapshot IS meant to be committed by
+# scripts/sync_dashboard_data.sh so Vercel has something to read
+!dashboard_data/manifest.db
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+
+# node / vercel
+node_modules/
+.vercel/
+
+# os
+.DS_Store

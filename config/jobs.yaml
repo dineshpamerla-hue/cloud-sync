@@ -1,0 +1,32 @@
+# Declarative job definitions. Add a new job by adding an entry here — no
+# code changes needed as long as the source/destination types below already
+# have adapters in src/cloud_sync/sources and src/cloud_sync/destinations.
+
+jobs:
+  - name: photos-local
+    source:
+      type: local
+      path: ~/Pictures
+    destination:
+      type: backblaze_b2
+      bucket: dinu-photos
+      prefix_strategy: date      # organizes as bucket/YYYY/MM/filename, from EXIF or mtime
+    exclude:
+      - "*.DS_Store"
+      - "*.tmp"
+      - ".Trashes/*"
+
+  - name: gdrive-backup
+    source:
+      type: google_drive
+      remote: "gdrive:"          # existing rclone remote name, must include trailing colon
+      export_formats:            # native Google Docs types exported to these formats
+        document: docx
+        spreadsheet: xlsx
+        presentation: pptx
+    destination:
+      type: backblaze_b2
+      bucket: dinu-gdrive-backup
+      prefix_strategy: mirror    # preserves Drive folder structure
+    exclude:
+      - "*.tmp"

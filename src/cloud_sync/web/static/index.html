@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>cloud-sync — manifest</title>
+<style>
+  :root {
+    --ink:        #0E1416;
+    --surface:    #161F22;
+    --surface-2:  #1D2A2E;
+    --line:       #2A383D;
+    --text:       #E9EDEE;
+    --muted:      #8CA0A5;
+    --amber:      #E8A33D;
+    --amber-dim:  #6b5326;
+    --green:      #5FB489;
+    --red:        #E06A6A;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  code, .mono, .num, th, .badge, .path {
+    font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 22px 28px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  header .brand {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 18px;
+    letter-spacing: 0.02em;
+  }
+  header .brand span { color: var(--amber); }
+  header .tagline { color: var(--muted); font-size: 12.5px; }
+  .layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    min-height: calc(100vh - 68px);
+  }
+  nav.manifest {
+    border-right: 1px solid var(--line);
+    padding: 18px 0;
+  }
+  nav.manifest .section-label {
+    padding: 0 20px 10px;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: lowercase;
+    letter-spacing: 0.03em;
+  }
+  .job-row {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-left: 2px solid transparent;
+    color: var(--text);
+    padding: 12px 20px;
+    cursor: pointer;
+  }
+  .job-row:hover { background: var(--surface); }
+  .job-row.active { border-left-color: var(--amber); background: var(--surface); }
+  .job-row .name { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; }
+  .job-row .route { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+  .status-dot.completed { background: var(--green); }
+  .status-dot.completed_with_errors { background: var(--amber); }
+  .status-dot.failed { background: var(--red); }
+  .status-dot.running { background: var(--amber); animation: pulse 1.4s infinite; }
+  .status-dot.none { background: var(--line); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  main { padding: 28px; }
+  .stat-row { display: flex; gap: 28px; margin-bottom: 26px; flex-wrap: wrap; }
+  .stat { min-width: 110px; }
+  .stat .num { font-size: 26px; color: var(--text); }
+  .stat .num.uploaded { color: var(--green); }
+  .stat .num.failed { color: var(--red); }
+  .stat .label { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  th { color: var(--muted); font-weight: 400; font-size: 11px; }
+  tr:hover td { background: var(--surface); }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px;
+  }
+  .badge.completed { background: rgba(95,180,137,0.15); color: var(--green); }
+  .badge.completed_with_errors { background: rgba(232,163,61,0.15); color: var(--amber); }
+  .badge.failed { background: rgba(224,106,106,0.15); color: var(--red); }
+  .badge.running { background: rgba(232,163,61,0.15); color: var(--amber); }
+
+  .log-panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 14px 16px;
+    max-height: 340px;
+    overflow-y: auto;
+  }
+  .log-line { font-size: 12px; color: var(--muted); padding: 3px 0; white-space: pre-wrap; word-break: break-all; }
+  .log-line .ev-uploaded { color: var(--green); }
+  .log-line .ev-error { color: var(--red); }
+  .log-line .ev-skip { color: var(--muted); }
+  h2 { font-size: 13px; text-transform: lowercase; color: var(--muted); letter-spacing: 0.02em; font-weight: 400; margin: 0 0 12px; }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">cloud<span>-</span>sync</div>
+  <div class="tagline">transfer manifest &amp; run history</div>
+</header>
+
+<div class="layout">
+  <nav class="manifest">
+    <div class="section-label">jobs</div>
+    <div id="job-list"></div>
+  </nav>
+  <main>
+    <div id="content" class="empty">Loading manifest…</div>
+  </main>
+</div>
+
+<script>
+const API = ""; // same-origin; set to your deployed API base if serving the frontend separately
+
+let jobs = [];
+let selectedJob = null;
+
+async function fetchJSON(path) {
+  const res = await fetch(API + path);
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  return res.json();
+}
+
+function fmtBytes(n) {
+  if (!n) return "0 GB";
+  return (n / (1024 ** 3)).toFixed(2) + " GB";
+}
+
+function renderJobList() {
+  const el = document.getElementById("job-list");
+  if (!jobs.length) {
+    el.innerHTML = `<div style="padding:0 20px;color:var(--muted);font-size:12.5px;">No jobs found in config/jobs.yaml</div>`;
+    return;
+  }
+  el.innerHTML = jobs.map(j => {
+    const status = j.last_run ? j.last_run.status : "none";
+    const active = selectedJob === j.name ? "active" : "";
+    return `
+      <button class="job-row ${active}" data-job="${j.name}">
+        <div class="name"><span class="status-dot ${status}"></span>${j.name}</div>
+        <div class="route">${j.source_type} → ${j.bucket || j.destination_type}</div>
+      </button>`;
+  }).join("");
+  el.querySelectorAll(".job-row").forEach(btn => {
+    btn.addEventListener("click", () => selectJob(btn.dataset.job));
+  });
+}
+
+async function selectJob(name) {
+  selectedJob = name;
+  renderJobList();
+  const content = document.getElementById("content");
+  content.innerHTML = "Loading…";
+
+  const job = jobs.find(j => j.name === name);
+  const runs = await fetchJSON(`/api/runs?job=${encodeURIComponent(name)}&limit=15`);
+  const latest = runs[0];
+
+  let html = "";
+
+  html += `<div class="stat-row">
+    <div class="stat"><div class="num uploaded">${latest ? latest.files_uploaded : "–"}</div><div class="label">uploaded</div></div>
+    <div class="stat"><div class="num">${latest ? latest.files_skipped : "–"}</div><div class="label">skipped (unchanged)</div></div>
+    <div class="stat"><div class="num failed">${latest ? latest.files_failed : "–"}</div><div class="label">failed</div></div>
+    <div class="stat"><div class="num">${latest ? fmtBytes(latest.bytes_uploaded) : "–"}</div><div class="label">transferred</div></div>
+  </div>`;
+
+  html += `<h2>run history — ${job.source_type} → ${job.bucket || job.destination_type}</h2>`;
+  if (!runs.length) {
+    html += `<div class="empty">No runs recorded yet. Run <code>cloud-sync run --job ${name}</code> locally.</div>`;
+  } else {
+    html += `<table><thead><tr>
+      <th>started</th><th>status</th><th>uploaded</th><th>skipped</th><th>failed</th><th>bytes</th>
+    </tr></thead><tbody>`;
+    for (const r of runs) {
+      html += `<tr>
+        <td class="mono">${new Date(r.started_at).toLocaleString()}</td>
+        <td><span class="badge ${r.status}">${r.status.replace(/_/g," ")}</span></td>
+        <td class="num">${r.files_uploaded}</td>
+        <td class="num">${r.files_skipped}</td>
+        <td class="num">${r.files_failed}</td>
+        <td class="num">${fmtBytes(r.bytes_uploaded)}</td>
+      </tr>`;
+    }
+    html += `</tbody></table>`;
+
+    html += `<h2>latest run log</h2><div class="log-panel" id="log-panel">Loading…</div>`;
+  }
+
+  document.getElementById("content").innerHTML = html;
+
+  if (latest) {
+    const logData = await fetchJSON(`/api/runs/${latest.id}/log?tail=200`);
+    const panel = document.getElementById("log-panel");
+    if (!logData.lines.length) {
+      panel.innerHTML = `<div class="log-line">no log lines recorded for this run</div>`;
+    } else {
+      panel.innerHTML = logData.lines.map(l => {
+        const cls = l.event === "uploaded" ? "ev-uploaded"
+                  : l.event.includes("error") || l.event === "failed" ? "ev-error"
+                  : "ev-skip";
+        const detail = l.path ? ` ${l.path}` : (l.error ? ` ${l.error}` : "");
+        return `<div class="log-line"><span class="${cls}">${l.event}</span>${detail}</div>`;
+      }).join("");
+    }
+  }
+}
+
+async function init() {
+  try {
+    jobs = await fetchJSON("/api/jobs");
+  } catch (e) {
+    document.getElementById("content").innerHTML =
+      `<div class="empty">Couldn't reach the API (${e.message}). If you're viewing this on Vercel, make sure the dashboard DB has been synced up — see README "Dashboard data".</div>`;
+    return;
+  }
+  renderJobList();
+  if (jobs.length) selectJob(jobs[0].name);
+  else document.getElementById("content").innerHTML = `<div class="empty">No jobs configured yet.</div>`;
+}
+
+init();
+</script>
+</body>
+</html>
