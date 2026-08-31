@@ -75,8 +75,60 @@ class GoogleDriveSource(Source):
         # temp file first. Fine for the manifest's verify/hash sampling use case;
         # the bulk transfer itself goes through `rclone copy` directly (see
         # engine/uploader.py) which is far more efficient for hundreds of GB.
+        #
+        # Wrapped so that closing the stream reaps the subprocess and raises if
+        # `rclone cat` exited non-zero — otherwise a failed/partial transfer
+        # would look like a short-but-successful read and we'd hash/upload a
+        # truncated file.
         proc = subprocess.Popen(
             ["rclone", "cat", f"{self.remote}{file.relative_path}"],
             stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
-        return proc.stdout  # type: ignore[return-value]
+        return _RcloneCatStream(proc)  # type: ignore[return-value]
+
+
+class _RcloneCatStream:
+    """Read-only wrapper over `rclone cat`'s stdout that verifies the process
+    exit code when the stream is closed. Supports the context-manager and
+    read() interface the engine and verify path use.
+    """
+
+    def __init__(self, proc: "subprocess.Popen[bytes]"):
+        self._proc = proc
+        self._stdout = proc.stdout
+
+    def read(self, size: int = -1) -> bytes:
+        assert self._stdout is not None
+        return self._stdout.read(size)
+
+    def close(self) -> None:
+        if self._stdout is not None:
+            self._stdout.close()
+        stderr = b""
+        if self._proc.stderr is not None:
+            stderr = self._proc.stderr.read()
+            self._proc.stderr.close()
+        returncode = self._proc.wait()
+        if returncode != 0:
+            raise RuntimeError(
+                f"rclone cat failed (exit {returncode}): {stderr.decode(errors='replace').strip()}"
+            )
+
+    def __enter__(self) -> "_RcloneCatStream":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        # If the body already failed, don't mask that exception with a close()
+        # error — best-effort reap and let the original propagate.
+        if exc_type is not None:
+            try:
+                if self._stdout is not None:
+                    self._stdout.close()
+                if self._proc.stderr is not None:
+                    self._proc.stderr.close()
+                self._proc.wait()
+            except Exception:
+                pass
+            return
+        self.close()

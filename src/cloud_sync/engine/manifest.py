@@ -158,6 +158,15 @@ class Manifest:
                 (job_name, relative_path, dest_key, content_hash, size_bytes, status, error, now),
             )
 
+    def has_files(self, job_name: str) -> bool:
+        """True if this job has any recorded file rows. Used by the engine to
+        decide whether to prime an existence set from the destination (a lost
+        manifest ⇒ empty ⇒ recover from what's already uploaded).
+        """
+        with self._cursor() as cur:
+            cur.execute("SELECT 1 FROM files WHERE job_name=? LIMIT 1", (job_name,))
+            return cur.fetchone() is not None
+
     def files_for_job(self, job_name: str, status: Optional[str] = None) -> Iterator[FileRecord]:
         with self._cursor() as cur:
             if status:

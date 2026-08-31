@@ -10,6 +10,7 @@ source of truth for what's already done.
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,6 +78,20 @@ def run_job(
     if hasattr(destination, "ensure_bucket") and not dry_run:
         destination.ensure_bucket()
 
+    # Manifest-loss recovery: if this job has no recorded files (fresh machine,
+    # a CI cache miss, a deleted DB), prime an in-memory set of keys already in
+    # the destination so we record them as done instead of re-uploading
+    # hundreds of GB. One rclone call; skipped when the manifest already has
+    # state or the destination can't enumerate keys.
+    existing_keys: set[str] = set()
+    if not dry_run and not manifest.has_files(job.name) and hasattr(destination, "list_existing_keys"):
+        try:
+            existing_keys = destination.list_existing_keys()
+            logger.emit("primed_existing_keys", job=job.name, count=len(existing_keys))
+        except Exception as exc:
+            # Non-fatal: worst case we re-upload. Log and continue.
+            logger.emit("prime_existing_keys_failed", error=str(exc))
+
     run_id = manifest.start_run(job.name)
     stats = UploadStats()
     logger.emit("run_started", job=job.name, run_id=run_id, source=source.describe(),
@@ -96,6 +111,21 @@ def run_job(
             if not manifest.needs_upload(job.name, src_file.relative_path, src_file.size):
                 stats.files_skipped += 1
                 logger.emit("skipped", path=src_file.relative_path, reason="already_uploaded")
+                if progress_cb:
+                    progress_cb(stats)
+                continue
+
+            # Recovered-from-destination shortcut: the manifest didn't know
+            # about this file, but the key is already in the bucket. Record it
+            # as uploaded (so future runs skip via the manifest) without
+            # re-transferring the bytes.
+            if dest_key in existing_keys:
+                manifest.record_result(
+                    job.name, src_file.relative_path, dest_key, "uploaded",
+                    size_bytes=src_file.size,
+                )
+                stats.files_skipped += 1
+                logger.emit("skipped", path=src_file.relative_path, reason="exists_in_destination")
                 if progress_cb:
                     progress_cb(stats)
                 continue
@@ -138,6 +168,15 @@ def run_job(
         run_status = "failed"
         raise
     finally:
+        # Flush the final stats to the run record. update_run_counts is only
+        # called after an actual upload/failure inside the loop, so a run that
+        # only skips files (a resumed run where everything is already done)
+        # would otherwise leave the run row at its 0 defaults.
+        manifest.update_run_counts(
+            run_id, files_total=stats.files_total, files_uploaded=stats.files_uploaded,
+            files_skipped=stats.files_skipped, files_failed=stats.files_failed,
+            bytes_uploaded=stats.bytes_uploaded,
+        )
         manifest.finish_run(run_id, run_status)
         logger.emit("run_finished", status=run_status, **stats.__dict__)
         logger.close()
@@ -157,15 +196,19 @@ def _upload_with_retry(source, destination, src_file, dest_key, max_retries, log
                 with open(local_path, "rb") as f:
                     content_hash = hash_file(f)
             else:
-                # Non-local sources (e.g. Google Drive) go through rclone's own
-                # transfer path when the destination also supports it; otherwise
-                # stream read() -> a temp file -> upload_file().
+                # Non-local sources (e.g. Google Drive) stream read() -> a temp
+                # file -> upload_file(). Create the temp file first so a failure
+                # while reading the stream can never leak it, and let source.read
+                # raise if the underlying transfer (e.g. `rclone cat`) failed
+                # rather than silently uploading a truncated file.
                 import tempfile
-                with source.read(src_file) as stream, tempfile.NamedTemporaryFile(delete=False) as tmp:
-                    hasher_path = Path(tmp.name)
-                    while chunk := stream.read(1024 * 1024):
-                        tmp.write(chunk)
+                fd, tmp_name = tempfile.mkstemp()
+                os.close(fd)
+                hasher_path = Path(tmp_name)
                 try:
+                    with source.read(src_file) as stream, open(hasher_path, "wb") as tmp:
+                        while chunk := stream.read(1024 * 1024):
+                            tmp.write(chunk)
                     destination.upload_file(hasher_path, dest_key)
                     with open(hasher_path, "rb") as f:
                         content_hash = hash_file(f)

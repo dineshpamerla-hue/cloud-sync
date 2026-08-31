@@ -11,9 +11,10 @@ token.json
 *.db-journal
 logs/
 .cloud-sync/
-# exception: the dashboard_data snapshot IS meant to be committed by
-# scripts/sync_dashboard_data.sh so Vercel has something to read
-!dashboard_data/manifest.db
+# The dashboard reads a *runs-only* JSON snapshot (no source file names), which
+# IS meant to be committed — by `cloud-sync export-history` in CI. The full
+# manifest.db (which contains Google Drive file paths) must stay ignored.
+dashboard_data/manifest.db
 
 # python
 __pycache__/

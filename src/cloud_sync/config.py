@@ -19,10 +19,17 @@ def cloud_sync_home() -> Path:
 
     Defaults to ~/.cloud-sync, overridable via CLOUD_SYNC_HOME so tests and
     CI don't touch a real home directory.
+
+    On a read-only/ephemeral host (Vercel's serverless FS), set
+    CLOUD_SYNC_READONLY=1 so we don't try to create the directory or its
+    `logs/` subdir — the dashboard there reads run history from a committed
+    JSON snapshot (DASHBOARD_HISTORY_JSON), never from this path.
     """
     load_dotenv(override=False)
     home = os.environ.get("CLOUD_SYNC_HOME")
     path = Path(home).expanduser() if home else Path.home() / ".cloud-sync"
+    if os.environ.get("CLOUD_SYNC_READONLY"):
+        return path
     path.mkdir(parents=True, exist_ok=True)
     (path / "logs").mkdir(parents=True, exist_ok=True)
     return path

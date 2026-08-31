@@ -7,7 +7,9 @@
 """
 from __future__ import annotations
 
+import json
 import sys
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -131,6 +133,53 @@ def status(config_path: str):
         )
     console.print(table)
     manifest.close()
+
+
+@main.command(name="export-history")
+@click.option("--config", "config_path", default="config/jobs.yaml", show_default=True)
+@click.option("--out", "out_path", required=True, help="Where to write the history JSON")
+@click.option("--limit", type=int, default=100, show_default=True,
+              help="Max runs per job to include")
+def export_history(config_path: str, out_path: str, limit: int):
+    """Dump run history as JSON for the dashboard to serve.
+
+    This is the ONLY thing that leaves a runner/machine for the public
+    dashboard. It contains run-level counts and timestamps per job — never the
+    `files` table, so source (e.g. Google Drive) file names and paths are not
+    exposed. Wire this into CI after a run, commit the output, and the Vercel
+    dashboard reads it (see DASHBOARD_HISTORY_JSON).
+    """
+    try:
+        jobs = load_jobs(config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        sys.exit(1)
+
+    manifest = Manifest(cloud_sync_home() / "manifest.db")
+    jobs_out = []
+    runs_out = []
+    for job in jobs:
+        runs = manifest.recent_runs(job.name, limit=limit)
+        last = runs[0].__dict__ if runs else None
+        jobs_out.append({
+            "name": job.name,
+            "source_type": job.source.type,
+            "destination_type": job.destination.type,
+            "bucket": job.destination.options.get("bucket"),
+            "last_run": last,
+        })
+        for r in runs:
+            runs_out.append(r.__dict__)
+    manifest.close()
+
+    runs_out.sort(key=lambda r: r["id"], reverse=True)
+    payload = {"jobs": jobs_out, "runs": runs_out}
+
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, indent=2))
+    console.print(f"[bold green]Wrote[/bold green] {out} "
+                  f"({len(jobs_out)} jobs, {len(runs_out)} runs).")
 
 
 if __name__ == "__main__":

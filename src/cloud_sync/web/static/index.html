@@ -116,6 +116,18 @@
   .log-line .ev-skip { color: var(--muted); }
   h2 { font-size: 13px; text-transform: lowercase; color: var(--muted); letter-spacing: 0.02em; font-weight: 400; margin: 0 0 12px; }
   .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+
+  .sync-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; flex-wrap: wrap; }
+  .sync-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12.5px;
+    background: var(--amber); color: var(--ink); border: none;
+    padding: 8px 16px; border-radius: 4px; cursor: pointer;
+  }
+  .sync-btn:hover { filter: brightness(1.08); }
+  .sync-btn:disabled { background: var(--amber-dim); color: var(--muted); cursor: not-allowed; }
+  .sync-note { color: var(--muted); font-size: 12px; }
+  .sync-note a { color: var(--amber); }
+  .sync-note.err { color: var(--red); }
 </style>
 </head>
 <body>
@@ -131,6 +143,10 @@
     <div id="job-list"></div>
   </nav>
   <main>
+    <div class="sync-bar" id="sync-bar" style="display:none;">
+      <button class="sync-btn" id="sync-btn">Start Google Drive → B2 sync</button>
+      <span class="sync-note" id="sync-note"></span>
+    </div>
     <div id="content" class="empty">Loading manifest…</div>
   </main>
 </div>
@@ -232,7 +248,84 @@ async function selectJob(name) {
   }
 }
 
+// ---- Start-sync control (dispatches a GitHub Actions run via the API) ----
+const TRIGGER_JOB = "gdrive-backup";
+let syncPollTimer = null;
+
+function syncToken() {
+  let t = localStorage.getItem("cloudSyncToken");
+  if (!t) {
+    t = prompt("Enter the sync trigger token (set as SYNC_TRIGGER_SECRET in Vercel):");
+    if (t) localStorage.setItem("cloudSyncToken", t.trim());
+  }
+  return t ? t.trim() : null;
+}
+
+function setSyncNote(msg, isErr) {
+  const note = document.getElementById("sync-note");
+  note.innerHTML = msg;
+  note.className = "sync-note" + (isErr ? " err" : "");
+}
+
+async function refreshSyncStatus() {
+  const token = localStorage.getItem("cloudSyncToken");
+  if (!token) return;
+  try {
+    const res = await fetch(API + "/api/sync/status", { headers: { "X-Sync-Token": token } });
+    if (!res.ok) return;
+    const data = await res.json();
+    const latest = (data.runs || [])[0];
+    const btn = document.getElementById("sync-btn");
+    if (latest && latest.status && latest.status !== "completed") {
+      btn.disabled = true;
+      setSyncNote(`Run ${latest.status}… <a href="${latest.html_url}" target="_blank" rel="noopener">view on GitHub</a>`, false);
+    } else {
+      btn.disabled = false;
+      if (latest) {
+        const ok = latest.conclusion === "success";
+        setSyncNote(`Last run: ${latest.conclusion || "unknown"} · <a href="${latest.html_url}" target="_blank" rel="noopener">view</a>`, !ok);
+      }
+      if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+    }
+  } catch (e) { /* transient; leave the button as-is */ }
+}
+
+async function startSync() {
+  const token = syncToken();
+  if (!token) { setSyncNote("A token is required to start a sync.", true); return; }
+  const btn = document.getElementById("sync-btn");
+  btn.disabled = true;
+  setSyncNote("Dispatching…", false);
+  try {
+    const res = await fetch(API + "/api/sync/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Sync-Token": token },
+      body: JSON.stringify({ job: TRIGGER_JOB }),
+    });
+    if (res.status === 403) {
+      localStorage.removeItem("cloudSyncToken");
+      setSyncNote("Token rejected. Click the button to re-enter it.", true);
+      btn.disabled = false;
+      return;
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setSyncNote(`Could not start sync: ${body.detail || res.status}`, true);
+      btn.disabled = false;
+      return;
+    }
+    setSyncNote("Sync dispatched. Waiting for the runner to pick it up…", false);
+    if (syncPollTimer) clearInterval(syncPollTimer);
+    syncPollTimer = setInterval(refreshSyncStatus, 8000);
+    setTimeout(refreshSyncStatus, 4000);
+  } catch (e) {
+    setSyncNote(`Could not start sync: ${e.message}`, true);
+    btn.disabled = false;
+  }
+}
+
 async function init() {
+  document.getElementById("sync-btn").addEventListener("click", startSync);
   try {
     jobs = await fetchJSON("/api/jobs");
   } catch (e) {
@@ -241,6 +334,10 @@ async function init() {
     return;
   }
   renderJobList();
+  if (jobs.some(j => j.name === TRIGGER_JOB)) {
+    document.getElementById("sync-bar").style.display = "flex";
+    refreshSyncStatus();
+  }
   if (jobs.length) selectJob(jobs[0].name);
   else document.getElementById("content").innerHTML = `<div class="empty">No jobs configured yet.</div>`;
 }

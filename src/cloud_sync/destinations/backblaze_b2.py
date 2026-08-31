@@ -40,14 +40,54 @@ class BackblazeB2Destination:
             capture_output=True, text=True,
         )
         if result.returncode != 0:
-            # rclone lsjson on a single file path errors out if it's missing —
-            # treat any failure here as "doesn't exist" and let upload retry logic
-            # surface a real error if it's something else.
-            return False
+            # rclone reports a genuinely-missing path as "directory not found" /
+            # "object not found" — those legitimately mean "doesn't exist".
+            # Anything else (auth failure, network error, bad bucket) is a real
+            # error we must not silently treat as "missing", or the engine would
+            # happily re-upload or skip based on a lie.
+            stderr = (result.stderr or "").lower()
+            if "not found" in stderr or "directory not found" in stderr:
+                return False
+            raise RuntimeError(
+                f"rclone lsjson failed for {key}: {result.stderr.strip()}"
+            )
         try:
             return bool(json.loads(result.stdout or "[]"))
         except json.JSONDecodeError:
             return False
+
+    def list_existing_keys(self, prefix: str = "") -> set[str]:
+        """Return the set of keys already present under this bucket/prefix.
+
+        One `rclone lsjson --recursive` call. Used by the engine to recover
+        when the manifest is empty (e.g. a fresh CI runner whose cache missed)
+        so a lost manifest doesn't cause a full re-upload — keys already in B2
+        are recorded as done instead of re-transferred.
+        """
+        target = f"{self.remote}{self.bucket}"
+        if prefix:
+            target = f"{target}/{prefix}"
+        result = subprocess.run(
+            ["rclone", "lsjson", "--recursive", "--files-only", target],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            stderr = (result.stderr or "").lower()
+            if "not found" in stderr:
+                return set()
+            raise RuntimeError(
+                f"rclone lsjson --recursive failed for {target}: {result.stderr.strip()}"
+            )
+        try:
+            entries = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError:
+            return set()
+        keys = set()
+        for entry in entries:
+            path = entry.get("Path")
+            if path:
+                keys.add(f"{prefix}/{path}" if prefix else path)
+        return keys
 
     def upload_file(self, local_path: Path, key: str) -> None:
         result = subprocess.run(

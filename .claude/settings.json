@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/size-reminder.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking session size..."
+          }
+        ]
+      }
+    ]
+  }
+}

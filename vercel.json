@@ -6,6 +6,7 @@
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "api/index.py" },
+    { "src": "/", "dest": "src/cloud_sync/web/static/index.html" },
     { "src": "/(.*)", "dest": "src/cloud_sync/web/static/$1" }
   ]
 }

@@ -1,27 +1,32 @@
 """Vercel Python serverless entrypoint.
 
-Wraps the same FastAPI app used locally, but Vercel's filesystem is
-read-only and ephemeral per-invocation, so this does NOT read the manifest
-from ~/.cloud-sync like the local CLI does — it reads from wherever
-DASHBOARD_DB_PATH points (a copy pushed up after each local run; see the
-README's "Dashboard data" section for the simplest option: committing a
-snapshot to the repo, or wiring up Vercel Postgres/Blob for something more
-real-time). This file only adapts *how the DB is located*; all the actual
-query logic lives in cloud_sync.web.api so there's exactly one
-implementation to maintain.
+Wraps the same FastAPI app used locally. Vercel's filesystem is read-only and
+ephemeral per-invocation, so:
+
+  * CLOUD_SYNC_READONLY=1 tells config.cloud_sync_home() not to try to create
+    ~/.cloud-sync or its logs/ subdir (that would 500 on Vercel).
+  * DASHBOARD_HISTORY_JSON points the API at the committed run-history snapshot
+    (written by `cloud-sync export-history`, pushed by the GitHub Actions
+    worker) instead of a live SQLite manifest.
+
+All query/trigger logic lives in cloud_sync.web.api — this file only adapts the
+environment, so there's exactly one implementation to maintain.
 """
 from __future__ import annotations
 
 import os
-
-# Vercel's Python runtime needs `src/` on the path since this file lives
-# outside the package.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+# Vercel's Python runtime needs `src/` on the path since this file lives
+# outside the package.
+_root = Path(__file__).parent.parent
+sys.path.insert(0, str(_root / "src"))
 
-os.environ.setdefault("CLOUD_SYNC_HOME", str(Path(__file__).parent.parent / "dashboard_data"))
+os.environ.setdefault("CLOUD_SYNC_READONLY", "1")
+os.environ.setdefault(
+    "DASHBOARD_HISTORY_JSON", str(_root / "dashboard_data" / "history.json")
+)
 
 from cloud_sync.web.api import app  # noqa: E402
 

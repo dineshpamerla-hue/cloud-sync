@@ -104,3 +104,19 @@ def test_dry_run_does_not_upload(workspace):
 
     assert stats.files_uploaded == 2  # counted as "would upload"
     assert fake_dest.uploaded == {}
+
+
+def test_skip_only_run_persists_counts_to_run_record(workspace):
+    """A resumed run that skips every file must still record its counts in the
+    runs table (the dashboard/status/export-history read from there), not leave
+    the row at its 0 defaults.
+    """
+    job, manifest, fake_dest, source_dir = workspace
+    uploader_mod.run_job(job, manifest=manifest)   # first run uploads both
+
+    uploader_mod.run_job(job, manifest=manifest)   # second run skips both
+
+    last = manifest.recent_runs(job.name, limit=1)[0]
+    assert last.files_total == 2
+    assert last.files_skipped == 2
+    assert last.files_uploaded == 0

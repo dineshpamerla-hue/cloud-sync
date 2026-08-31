@@ -1,0 +1,8 @@
+# Vercel's @vercel/python builder installs the API's deps from this file
+# (not pyproject.toml). Keep it to what the dashboard/trigger actually import
+# at runtime — no rclone-side or CLI-only packages, and no heavy extras, so
+# the serverless bundle stays small and cold starts stay fast.
+fastapi>=0.110
+pydantic>=2.6
+pyyaml>=6.0
+python-dotenv>=1.0
