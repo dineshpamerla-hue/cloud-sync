@@ -26,9 +26,11 @@ DEFAULT_EXPORT_FORMATS = {
 
 class GoogleDriveSource(Source):
     def __init__(self, remote: str, export_formats: dict[str, str] | None = None):
-        if not remote.endswith(":"):
+        # A remote may name a whole drive ("gdrive:") or a subfolder within it
+        # ("gdrive:pics"), which scopes the job to just that folder.
+        if ":" not in remote:
             remote = remote + ":"
-        self.remote = remote
+        self.remote = remote.rstrip("/")
         self.export_formats = export_formats or DEFAULT_EXPORT_FORMATS
         if shutil.which("rclone") is None:
             raise RuntimeError(
@@ -38,6 +40,10 @@ class GoogleDriveSource(Source):
 
     def describe(self) -> str:
         return f"google_drive:{self.remote}"
+
+    def remote_path(self, relative_path: str) -> str:
+        separator = "" if self.remote.endswith(":") else "/"
+        return f"{self.remote}{separator}{relative_path}"
 
     def _rclone_export_args(self) -> list[str]:
         """Build --drive-export-formats so native Docs/Sheets/Slides come through
@@ -81,7 +87,7 @@ class GoogleDriveSource(Source):
         # would look like a short-but-successful read and we'd hash/upload a
         # truncated file.
         proc = subprocess.Popen(
-            ["rclone", "cat", f"{self.remote}{file.relative_path}"],
+            ["rclone", "cat", self.remote_path(file.relative_path)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

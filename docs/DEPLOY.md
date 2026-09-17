@@ -18,15 +18,14 @@ GitHub Actions secrets.
 
 ---
 
-## 1. Push the repo to GitHub (public)
+## 1. Push the repo to GitHub
 
-Already on `main`? Then, from the repo root:
+Done — the repo lives at `dineshpamerla-hue/cloud-sync` and `main` tracks it.
+Just make sure your latest commits are pushed before deploying:
 
 ```bash
-gh repo create dineshpamerla/cloud-sync --public --source . --push
+git push origin main
 ```
-
-(or create an empty repo on github.com and `git remote add origin …` + `git push -u origin main`.)
 
 ## 2. GitHub Actions secrets (the worker's credentials)
 
@@ -59,7 +58,7 @@ github.com → **Settings → Developer settings → Fine-grained tokens → Gen
 | Name | Value |
 |---|---|
 | `GITHUB_TOKEN` | the fine-grained PAT from step 3 |
-| `GITHUB_REPO` | `dineshpamerla/cloud-sync` |
+| `GITHUB_REPO` | `dineshpamerla-hue/cloud-sync` |
 | `SYNC_TRIGGER_SECRET` | a long random string you invent (e.g. `openssl rand -hex 24`) — you'll type it into the dashboard once |
 | `VERCEL_ORIGIN` | your deployment URL, e.g. `https://cloud-sync.vercel.app` (for CORS) |
 

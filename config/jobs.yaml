@@ -19,7 +19,7 @@ jobs:
   - name: gdrive-backup
     source:
       type: google_drive
-      remote: "gdrive:"          # existing rclone remote name, must include trailing colon
+      remote: "gdrive:pics"      # scoped to the pics/ folder; use "gdrive:" for the whole drive
       export_formats:            # native Google Docs types exported to these formats
         document: docx
         spreadsheet: xlsx
