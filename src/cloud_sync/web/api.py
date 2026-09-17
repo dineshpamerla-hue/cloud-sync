@@ -39,9 +39,12 @@ app = FastAPI(title="cloud-sync dashboard")
 # lives here now. Extra origins can be added via DASHBOARD_ALLOWED_ORIGINS
 # (comma-separated).
 _allowed_origins = ["http://localhost:8000", "http://127.0.0.1:8000"]
-_env_origin = os.environ.get("VERCEL_ORIGIN")
-if _env_origin:
-    _allowed_origins.append(_env_origin.rstrip("/"))
+# Vercel injects these itself and rejects any custom name under the reserved
+# VERCEL_ prefix, so the deployment origin has to be read, never configured.
+for _host_var in ("VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_URL"):
+    _host = os.environ.get(_host_var)
+    if _host:
+        _allowed_origins.append(f"https://{_host.rstrip('/')}")
 _extra = os.environ.get("DASHBOARD_ALLOWED_ORIGINS", "")
 _allowed_origins.extend(o.strip().rstrip("/") for o in _extra.split(",") if o.strip())
 app.add_middleware(

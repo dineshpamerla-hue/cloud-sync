@@ -60,10 +60,13 @@ github.com → **Settings → Developer settings → Fine-grained tokens → Gen
 | `GITHUB_TOKEN` | the fine-grained PAT from step 3 |
 | `GITHUB_REPO` | `dineshpamerla-hue/cloud-sync` |
 | `SYNC_TRIGGER_SECRET` | a long random string you invent (e.g. `openssl rand -hex 24`) — you'll type it into the dashboard once |
-| `VERCEL_ORIGIN` | your deployment URL, e.g. `https://cloud-sync.vercel.app` (for CORS) |
 
-`CLOUD_SYNC_READONLY` and `DASHBOARD_HISTORY_JSON` are set automatically by
-`api/index.py` — you don't add those.
+Those three are all you add. `CLOUD_SYNC_READONLY` and `DASHBOARD_HISTORY_JSON`
+are set by `api/index.py`; the deployment's own origin is read from Vercel's
+`VERCEL_URL` / `VERCEL_PROJECT_PRODUCTION_URL`, which Vercel injects for you.
+(Don't try to create a `VERCEL_*` variable yourself — the platform reserves that
+prefix and rejects it.) To allow an extra origin, set `DASHBOARD_ALLOWED_ORIGINS`
+to a comma-separated list.
 
 3. **Redeploy** so the env vars take effect.
 
