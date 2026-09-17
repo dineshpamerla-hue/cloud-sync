@@ -1,4 +1,19 @@
 {
-  "jobs": [],
+  "jobs": [
+    {
+      "name": "photos-local",
+      "source_type": "local",
+      "destination_type": "backblaze_b2",
+      "bucket": "dinu-photos",
+      "last_run": null
+    },
+    {
+      "name": "gdrive-backup",
+      "source_type": "google_drive",
+      "destination_type": "backblaze_b2",
+      "bucket": "dinu-gdrive-backup",
+      "last_run": null
+    }
+  ],
   "runs": []
 }
