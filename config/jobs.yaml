@@ -26,7 +26,7 @@ jobs:
         presentation: pptx
     destination:
       type: backblaze_b2
-      bucket: dinu-gdrive-backup
+      bucket: gdrive-backup-dineshk3436
       prefix_strategy: mirror    # preserves Drive folder structure
     exclude:
       - "*.tmp"
