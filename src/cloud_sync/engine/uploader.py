@@ -92,7 +92,10 @@ def run_job(
             # Non-fatal: worst case we re-upload. Log and continue.
             logger.emit("prime_existing_keys_failed", error=str(exc))
 
-    run_id = manifest.start_run(job.name)
+    # A dry run must leave no trace in the manifest: it uploads nothing, so
+    # recording it would publish a "completed, 545 uploaded" run to the
+    # dashboard and invite deleting sources that were never actually copied.
+    run_id = None if dry_run else manifest.start_run(job.name)
     stats = UploadStats()
     logger.emit("run_started", job=job.name, run_id=run_id, source=source.describe(),
                 destination=destination.describe())
@@ -172,12 +175,13 @@ def run_job(
         # called after an actual upload/failure inside the loop, so a run that
         # only skips files (a resumed run where everything is already done)
         # would otherwise leave the run row at its 0 defaults.
-        manifest.update_run_counts(
-            run_id, files_total=stats.files_total, files_uploaded=stats.files_uploaded,
-            files_skipped=stats.files_skipped, files_failed=stats.files_failed,
-            bytes_uploaded=stats.bytes_uploaded,
-        )
-        manifest.finish_run(run_id, run_status)
+        if run_id is not None:
+            manifest.update_run_counts(
+                run_id, files_total=stats.files_total, files_uploaded=stats.files_uploaded,
+                files_skipped=stats.files_skipped, files_failed=stats.files_failed,
+                bytes_uploaded=stats.bytes_uploaded,
+            )
+            manifest.finish_run(run_id, run_status)
         logger.emit("run_finished", status=run_status, **stats.__dict__)
         logger.close()
         if own_manifest:

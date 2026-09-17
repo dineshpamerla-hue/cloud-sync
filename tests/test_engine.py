@@ -120,3 +120,27 @@ def test_skip_only_run_persists_counts_to_run_record(workspace):
     assert last.files_total == 2
     assert last.files_skipped == 2
     assert last.files_uploaded == 0
+
+
+def test_dry_run_records_no_run(workspace):
+    """A dry run transfers nothing, so it must not leave a run in the manifest:
+    export-history would publish it to the dashboard as a completed upload and
+    invite deleting sources that were never copied.
+    """
+    job, manifest, fake_dest, source_dir = workspace
+    stats = uploader_mod.run_job(job, manifest=manifest, dry_run=True)
+
+    assert stats.files_uploaded == 2      # reported to the caller
+    assert fake_dest.uploaded == {}       # but nothing moved
+    assert manifest.recent_runs(job.name) == []
+
+
+def test_dry_run_then_real_run_leaves_only_the_real_one(workspace):
+    job, manifest, fake_dest, source_dir = workspace
+    uploader_mod.run_job(job, manifest=manifest, dry_run=True)
+    uploader_mod.run_job(job, manifest=manifest)
+
+    runs = manifest.recent_runs(job.name)
+    assert len(runs) == 1
+    assert runs[0].files_uploaded == 2
+    assert len(fake_dest.uploaded) == 2
